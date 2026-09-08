@@ -1,0 +1,25 @@
+# @package _global_
+
+# Single-GPU Adam Lite jump sequential: train -> adapt -> finetune.
+# perturb_root_vel is added only in finetune (v1.0 push_robots).
+stages:
+  - name: train
+    overrides:
+      - +exp=ppo_roa/train
+    load_checkpoint_from_previous: false
+  - name: adapt
+    overrides:
+      - +exp=ppo_roa/adapt
+    load_checkpoint_from_previous: true
+  - name: finetune
+    overrides:
+      - +exp=ppo_roa/finetune
+      - +task.randomization.perturb_root_vel.min_s=4.0
+      - +task.randomization.perturb_root_vel.max_s=6.0
+      - +task.randomization.perturb_root_vel.x=[-0.2,0.2]
+      - +task.randomization.perturb_root_vel.y=[-0.2,0.2]
+      - +task.randomization.perturb_root_vel.z=[-0.1,0.1]
+      - +task.randomization.perturb_root_vel.roll=[-0.2,0.2]
+      - +task.randomization.perturb_root_vel.pitch=[-0.2,0.2]
+      - +task.randomization.perturb_root_vel.yaw=[-0.4,0.4]
+    load_checkpoint_from_previous: true

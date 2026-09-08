@@ -1,0 +1,10 @@
+# @package task.command
+
+motion_cfgs:
+  jump:
+    # Resolved against the imported active_adaptation repo root. Use an
+    # absolute path so the current venv (AA from mimic-repro) still finds
+    # this workspace's converted jump clip.
+    path: /root/autodl-tmp/mimic-repro-adam-lite/any4hdmi/output/adam_lite/jump
+    weight: 1.0
+    full_motion: true

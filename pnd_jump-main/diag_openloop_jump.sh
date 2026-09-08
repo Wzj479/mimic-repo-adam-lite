@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Phase 0: Isaac open-loop (action=0) diagnostic.
+set -euo pipefail
+
+CONDA_ENV="${CONDA_ENV:-pnd_jump}"
+NUM_ENVS="${NUM_ENVS:-64}"
+DIAG_DURATION_S="${DIAG_DURATION_S:-12}"
+
+export DIAG_DURATION_S
+
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV}"
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+
+cd "$(dirname "$0")"
+
+python legged_gym/scripts/diag_openloop_jump.py \
+    --task=adam_lite_jump \
+    --headless \
+    --num_envs="${NUM_ENVS}"

@@ -1,0 +1,32 @@
+# @package task.termination
+
+# episode boundary
+motion_timeout:
+  is_timeout: true
+
+# pelvis too far from the jump reference
+root_pos_error:
+  _target_: cum_body_pos_error
+  body_names: ${task.shared.termination_root_body_name}
+  min_steps: 25
+  threshold: 0.55
+  is_timeout: true
+  enabled: true
+
+# relative reference height too low (pnd_jump root_z_below_ref=0.35)
+root_z_below_ref:
+  _target_: cum_body_z_error
+  body_names: ${task.shared.termination_root_body_name}
+  min_steps: 1
+  threshold: 0.35
+
+# tilt / fall (maps pnd_jump pitch 0.95 / roll 0.85)
+fall_over:
+  _target_: fall_over
+  xy_thres: 0.82
+
+root_ori_error:
+  _target_: cum_body_ori_error
+  body_names: ${task.shared.termination_root_body_name}
+  min_steps: 25
+  threshold: 1.2

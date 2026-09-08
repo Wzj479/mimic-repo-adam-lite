@@ -1,0 +1,34 @@
+# Nested / duplicate trees
+mimic-repro/
+**/.git/
+
+# Environments
+venv/
+.venv/
+env/
+.env
+
+# Training / runtime artifacts
+outputs/
+outputs_*/
+wandb/
+artifacts/
+records/
+results/
+*.log
+*.out
+
+# Archives and caches
+pnd_jump.zip
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Local IDE
+.cursor/
+.vscode/
+.idea/

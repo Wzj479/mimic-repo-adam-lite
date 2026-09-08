@@ -1,0 +1,227 @@
+observation:
+  policy:
+    root_ang_vel_history:
+      _target_: mimic_lite.root_ang_vel_history
+      history_steps:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 8
+      - 16
+      noise_std: 0.2
+    projected_gravity_history:
+      _target_: mimic_lite.projected_gravity_history
+      history_steps:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 8
+      - 16
+      noise_std: 0.01
+    joint_pos_history:
+      _target_: mimic_lite.joint_pos_history
+      history_steps:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 8
+      - 16
+      noise_std: 0.02
+    joint_vel_history:
+      _target_: mimic_lite.joint_vel_history
+      history_steps:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 8
+      - 16
+      noise_std: 0.5
+    prev_actions:
+      _target_: mimic_lite.prev_actions
+      steps: 3
+  command:
+    ref_root_pos_future_local:
+      _target_: mimic_lite.ref_body_pos_future_local
+      body_names: pelvis
+      future_steps:
+      - -8
+      - -4
+      - -2
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      noise_std: 0.005
+    ref_root_ori_future_b:
+      _target_: mimic_lite.ref_root_ori_future_b
+      future_steps:
+      - -8
+      - -4
+      - -2
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      noise_std: 0.05
+    ref_joint_pos_future:
+      _target_: mimic_lite.ref_joint_pos_future
+      future_steps:
+      - -8
+      - -4
+      - -2
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      noise_std: 0.0
+joint_names_simulation:
+- hipPitch_Left
+- hipRoll_Left
+- hipYaw_Left
+- kneePitch_Left
+- anklePitch_Left
+- ankleRoll_Left
+- hipPitch_Right
+- hipRoll_Right
+- hipYaw_Right
+- kneePitch_Right
+- anklePitch_Right
+- ankleRoll_Right
+body_names_simulation:
+- pelvis
+- hipPitchLeft
+- hipRollLeft
+- thighLeft
+- shinLeft
+- anklePitchLeft
+- toeLeft
+- hipPitchRight
+- hipRollRight
+- thighRight
+- shinRight
+- anklePitchRight
+- toeRight
+- waistRoll
+- waistPitch
+- torso
+- shoulderPitchLeft
+- shoulderRollLeft
+- shoulderYawLeft
+- elbowLeft
+- wristYawLeft
+- shoulderPitchRight
+- shoulderRollRight
+- shoulderYawRight
+- elbowRight
+- wristYawRight
+joint_kp:
+  hipPitch_Left|hipPitch_Right: 305.0
+  hipRoll_Left|hipRoll_Right: 700.0
+  hipYaw_Left|hipYaw_Right: 405.0
+  kneePitch_Left|kneePitch_Right: 305.0
+  anklePitch_Left|anklePitch_Right: 25.0
+  ankleRoll_Left|ankleRoll_Right: 1.0
+joint_kd:
+  hipPitch_Left|hipPitch_Right: 6.1
+  hipRoll_Left|hipRoll_Right: 30.0
+  hipYaw_Left|hipYaw_Right: 6.1
+  kneePitch_Left|kneePitch_Right: 6.1
+  anklePitch_Left|anklePitch_Right: 3.0
+  ankleRoll_Left|ankleRoll_Right: 0.35
+default_joint_pos:
+  hipPitch_Left: -0.32
+  hipRoll_Left: 0.0
+  hipYaw_Left: -0.18
+  kneePitch_Left: 0.66
+  anklePitch_Left: -0.29
+  ankleRoll_Left: 0.0
+  hipPitch_Right: -0.32
+  hipRoll_Right: 0.0
+  hipYaw_Right: 0.18
+  kneePitch_Right: 0.66
+  anklePitch_Right: -0.29
+  ankleRoll_Right: 0.0
+  elbow_Left: -1.6
+  elbow_Right: -1.6
+  .*: 0.0
+policy_joint_names:
+- hipPitch_Left
+- hipRoll_Left
+- hipYaw_Left
+- kneePitch_Left
+- anklePitch_Left
+- ankleRoll_Left
+- hipPitch_Right
+- hipRoll_Right
+- hipYaw_Right
+- kneePitch_Right
+- anklePitch_Right
+- ankleRoll_Right
+action_scale:
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+- 0.3499999940395355
+motion:
+  motion_cfgs:
+    jump:
+      path: /root/autodl-tmp/mimic-repro-adam-lite/any4hdmi/output/adam_lite/jump
+      weight: 1.0
+      full_motion: true
+      shard: false
+  motion_path: /root/autodl-tmp/mimic-repro-adam-lite/any4hdmi/output/adam_lite/jump
+  future_steps:
+  - -8
+  - -4
+  - -2
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 8
+  - 12
+  - 16
+  body_names:
+  - pelvis
+  - thighLeft
+  - shinLeft
+  - toeLeft
+  - thighRight
+  - shinRight
+  - toeRight
+  - torso
+  joint_names:
+  - hipPitch_Left
+  - hipRoll_Left
+  - hipYaw_Left
+  - kneePitch_Left
+  - anklePitch_Left
+  - ankleRoll_Left
+  - hipPitch_Right
+  - hipRoll_Right
+  - hipYaw_Right
+  - kneePitch_Right
+  - anklePitch_Right
+  - ankleRoll_Right
+  root_body_name: pelvis
+  anchor_body_name: pelvis

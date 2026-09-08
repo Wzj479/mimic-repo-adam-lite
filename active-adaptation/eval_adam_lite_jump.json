@@ -1,0 +1,32 @@
+{
+  "nan": false,
+  "n_envs": 64,
+  "checkpoint": "/root/autodl-tmp/mimic-repro-adam-lite/active-adaptation/outputs/2026-09-08/17-20-52-AdamLiteJumpTrack-ppo_roa/checkpoint_1600.pt",
+  "mean_alive_s": 15.951250076293945,
+  "peak_jump_m": 0.23617075383663177,
+  "ref_peak_jump_m": 0.2919921875,
+  "height_error_m": 0.0568169429898262,
+  "height_error_ok_frac": 0.390625,
+  "takeoff_vz": 2.7188949584960938,
+  "takeoff_vz_ok_frac": 1.0,
+  "flight_s": 0.4440625011920929,
+  "flight_ok_frac": 1.0,
+  "peak_total_grf_n": 3142.341796875,
+  "peak_per_foot_n": 2833.335205078125,
+  "alive_full_clip_frac": 0.234375,
+  "success_rate": 0.984375,
+  "targets": {
+    "height_error_m": 0.05,
+    "takeoff_vz": 2.0,
+    "flight_s": 0.3,
+    "success_rate": 0.95,
+    "peak_total_grf_n": null,
+    "note": "v1.0 500N is ~1 BW standing; landing peak is observation-only"
+  },
+  "gates": {
+    "height_error": false,
+    "takeoff_vz": true,
+    "flight": true,
+    "success": true
+  }
+}

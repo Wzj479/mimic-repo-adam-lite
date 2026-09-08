@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mimic-lite"
+version = "0.1.0"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "active_adaptation",
+    "mjhub @ file:///root/autodl-tmp/mimic-repro/mjhub",
+    "any4hdmi @ file:///root/autodl-tmp/mimic-repro/any4hdmi",
+]
+
+[project.entry-points."active_adaptation.projects"]
+mimic_lite = "mimic_lite"
+
+[project.entry-points."active_adaptation.learning"]
+mimic_lite = "mimic_lite_learning"
+
+[tool.setuptools.packages]
+find = { where = ["."], include = ["mimic_lite*", "mimic_lite_learning*"] }
+
+[tool.setuptools.package-data]
+"*" = ["**/*"]

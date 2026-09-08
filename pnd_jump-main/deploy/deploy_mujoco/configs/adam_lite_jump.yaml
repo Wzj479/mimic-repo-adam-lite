@@ -1,0 +1,44 @@
+# Adam Lite jump MuJoCo sim2sim (v4: residual + future-ref obs = 82)
+# Legacy v3 (58-dim): obs_version: v3, num_obs: 58, future_frame_offsets: []
+# Legacy v1/v2: obs_version: v2, control_mode: default, num_obs: 56, action_scale: 0.5
+policy_path: "{LEGGED_GYM_ROOT_DIR}/logs/adam_lite_jump/exported/policies/policy_lstm_1.pt"
+xml_path: "{LEGGED_GYM_ROOT_DIR}/resources/robots/adam_lite/scene_12dof.xml"
+motion_file: "{LEGGED_GYM_ROOT_DIR}/../adam_lite_dataset/adam_lite/sfu/0005_2FeetJump001.bvh.json"
+
+simulation_duration: 25.0
+simulation_dt: 0.0025
+control_decimation: 8
+control_dt: 0.02
+
+# Ankle PD tuned via sweep_ankle_pd.py for landing pitch survival (Jul14 policy).
+kps: [305, 700, 405, 305, 30, 3, 305, 700, 405, 305, 30, 3]
+kds: [6.1, 30, 6.1, 6.1, 3, 0.35, 6.1, 30, 6.1, 6.1, 3, 0.35]
+
+default_angles: [-0.32, 0.0, -0.18, 0.66, -0.29, 0.0,
+                 -0.32, 0.0,  0.18, 0.66, -0.29, 0.0]
+
+torque_limit_scale: 0.85
+effort_limits: [230, 160, 105, 230, 40, 12, 230, 160, 105, 230, 40, 12]
+
+ang_vel_scale: 0.25
+dof_pos_scale: 1.0
+dof_vel_scale: 0.05
+action_scale: 0.35
+
+num_actions: 12
+num_obs: 82
+obs_version: v4
+future_frame_offsets: [5, 10]
+control_mode: residual   # q_des = q_ref + action * action_scale
+
+rsi: false
+rsi_margin_frames: 50
+
+yaw_assist_enable: false
+yaw_assist_kp: 0.20
+yaw_assist_kd: 0.05
+yaw_assist_max: 0.08
+yaw_assist_max_tilt: 0.35
+yaw_assist_max_err: 0.40
+yaw_assist_left_sign: -1.0
+yaw_assist_right_sign: 1.0

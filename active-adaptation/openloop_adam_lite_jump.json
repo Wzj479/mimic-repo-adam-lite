@@ -1,0 +1,12 @@
+{
+  "nan": false,
+  "kind": "openloop_cannot_track",
+  "mean_alive_s": 1.1050000190734863,
+  "instant_crash_frac": 1.0,
+  "peak_jump_m": 0.1132342666387558,
+  "ref_peak_jump_m": 0.2314453125,
+  "z_start": 0.9330930709838867,
+  "z_peak": 1.0463273525238037,
+  "n_envs": 4,
+  "duration_s": 12.0
+}
