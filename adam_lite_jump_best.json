@@ -1,0 +1,41 @@
+{
+  "best_method": "checkpoint_1000 + aligned native MuJoCo sim2sim + deploy ankle PD",
+  "why": "Landing-FT checkpoint_1600 fails the height-error gate and lives shorter in mjlab. The 6s native fall was a deploy mismatch, not a bad policy. After aligning physics, ckpt_1000 completes the clip. Stiffer deploy ankle PD keeps the jump and cuts peak GRF.",
+  "checkpoint": "/root/autodl-tmp/mimic-repro-adam-lite/active-adaptation/outputs/2026-09-08/12-21-37-train-sequential/stages/03-finetune/checkpoint_1000.pt",
+  "onnx": "/root/autodl-tmp/mimic-repro-adam-lite/active-adaptation/projects/mimic-lite/scripts/exports/AdamLiteJumpTrack/policy-adam_lite_jump_best.onnx",
+  "run_sim2sim": "bash sim2sim_jump_best.sh",
+  "mjlab_eval_ckpt1000": {
+    "source": "stage-7 64-env eval, start_from_zero",
+    "height_error_m": 0.032,
+    "takeoff_vz": 2.67,
+    "flight_s": 0.45,
+    "success_rate": 0.984,
+    "mean_alive_s": 18.5,
+    "peak_jump_m": 0.26
+  },
+  "sim2sim_train_pd": {
+    "pd": "train",
+    "mean_alive_s": 21.34,
+    "fallen": false,
+    "peak_jump_m": 0.222,
+    "takeoff_vz": 2.469,
+    "flight_s": 0.44,
+    "peak_total_grf_n": 5348,
+    "final_z": 0.875
+  },
+  "sim2sim_deploy_pd": {
+    "pd": "deploy",
+    "mean_alive_s": 21.34,
+    "fallen": false,
+    "peak_jump_m": 0.221,
+    "takeoff_vz": 2.482,
+    "flight_s": 0.44,
+    "peak_total_grf_n": 4697,
+    "final_z": 0.867,
+    "note": "anklePitch 30/3, ankleRoll 3/0.35; chosen post-process"
+  },
+  "video": "/root/autodl-tmp/mimic-repro-adam-lite/adam_lite_jump_best.mp4",
+  "not_best": {
+    "checkpoint_1600": "height_error 0.057 m (gate fail), mean_alive 16.0 s"
+  }
+}

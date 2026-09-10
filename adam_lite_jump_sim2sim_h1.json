@@ -1,0 +1,22 @@
+{
+  "onnx": "/root/autodl-tmp/mimic-repro-adam-lite/active-adaptation/projects/mimic-lite/scripts/exports/AdamLiteJumpTrack/policy-adam_lite_jump_best.onnx",
+  "mode": "motor",
+  "actuator": "motor",
+  "pd": "deploy",
+  "sim_dt": 0.0025,
+  "decimation": 8,
+  "effort_scale": 0.85,
+  "apply_armature": true,
+  "integrator": "implicitfast",
+  "start_frame": 1,
+  "mean_alive_s": 21.34,
+  "time_to_fall_s": null,
+  "peak_jump_m": 0.22302926923648592,
+  "takeoff_vz": 2.5105483437837948,
+  "flight_s": 0.44,
+  "peak_total_grf_n": 4692.890625,
+  "peak_per_foot_n": 4270.1142578125,
+  "final_z": 0.8556443901093396,
+  "n_ctrl": 1067,
+  "fallen": false
+}

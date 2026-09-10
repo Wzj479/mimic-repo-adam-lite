@@ -39,6 +39,9 @@ def main(cfg: DictConfig) -> None:
     )
     env.base_env.eval()
     td = env.reset()
+    with torch.inference_mode():
+        td = policy(td)
+        td = env.step(td)
     command = env.base_env.command_manager
     cmd = td["command"][0].detach().cpu().numpy()
     pol = td["policy"][0].detach().cpu().numpy()

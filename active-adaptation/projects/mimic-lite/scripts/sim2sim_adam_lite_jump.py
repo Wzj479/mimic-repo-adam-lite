@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Native-MuJoCo sim2sim for the MimicLite Adam Lite jump ONNX.
 
-Uses pnd_jump's 12DOF scene + PD loop, but NOT their 82-dim LSTM observation
-or training code. Policy I/O is the exported MimicLite student ONNX
+Uses pnd_jump's 12DOF scene, but NOT their 82-dim LSTM observation or
+training code. Policy I/O is the exported MimicLite student ONNX
 (command=168, policy=246).
+
+Modes (harder toward real, no retraining):
+  train   H0: mjlab-like position actuators, 0.005 x 4, full effort
+  motor   H1: motor + Python PD, 0.0025 x 8, torque x0.85, keep armature
+  realish H2: same as motor, XML armature/friction, Euler integrator
 """
 
 from __future__ import annotations
@@ -28,8 +33,36 @@ DEFAULT_MOTION = WORKSPACE / "adam_lite_dataset/adam_lite/sfu/0005_2FeetJump001.
 DEFAULT_ONNX = (
     WORKSPACE
     / "active-adaptation/projects/mimic-lite/scripts/exports/AdamLiteJumpTrack"
-    / "policy-wlvs4cnd-unknown.onnx"
+    / "policy-adam_lite_jump_best.onnx"
 )
+LEG_JOINT_NAMES = [
+    "hipPitch_Left",
+    "hipRoll_Left",
+    "hipYaw_Left",
+    "kneePitch_Left",
+    "anklePitch_Left",
+    "ankleRoll_Left",
+    "hipPitch_Right",
+    "hipRoll_Right",
+    "hipYaw_Right",
+    "kneePitch_Right",
+    "anklePitch_Right",
+    "ankleRoll_Right",
+]
+JOINT_CTRLRANGE = {
+    "hipPitch_Left": (-2.09, 2.09),
+    "hipRoll_Left": (-0.78, 1.57),
+    "hipYaw_Left": (-0.78, 0.78),
+    "kneePitch_Left": (-0.09, 2.4),
+    "anklePitch_Left": (-1.0, 0.35),
+    "ankleRoll_Left": (-0.3491, 0.3491),
+    "hipPitch_Right": (-2.09, 2.09),
+    "hipRoll_Right": (-1.57, 0.78),
+    "hipYaw_Right": (-0.78, 0.78),
+    "kneePitch_Right": (-0.09, 2.4),
+    "anklePitch_Right": (-1.0, 0.35),
+    "ankleRoll_Right": (-0.3491, 0.3491),
+}
 
 TRAIN_KPS = np.array(
     [305, 700, 405, 305, 25, 1, 305, 700, 405, 305, 25, 1], dtype=np.float32
@@ -88,9 +121,10 @@ def quat_mul(q1, q2):
 
 
 def quat_rotate_inverse(q, v):
-    q_inv = quat_conjugate(q)
-    t = 2.0 * np.cross(q_inv[1:], v)
-    return v + q_inv[0] * t + np.cross(q_inv[1:], t)
+    # Match active_adaptation.utils.math.quat_rotate_inverse (wxyz, world gravity).
+    xyz = q[1:]
+    t = 2.0 * np.cross(xyz, v)
+    return v - q[0] * t + np.cross(xyz, t)
 
 
 def matrix_from_quat_wxyz(q):
@@ -122,12 +156,24 @@ def projected_yaw_quat(q, x_axis_xy_threshold=0.1):
 
 
 def gravity_b(quat_wxyz):
-    qw, qx, qy, qz = quat_wxyz
-    g = np.zeros(3, dtype=np.float32)
-    g[0] = 2.0 * (-qz * qx + qw * qy)
-    g[1] = -2.0 * (qz * qy + qw * qx)
-    g[2] = 1.0 - 2.0 * (qw * qw + qz * qz)
-    return g
+    return quat_rotate_inverse(
+        quat_wxyz, np.array([0.0, 0.0, -1.0], dtype=np.float32)
+    )
+
+
+def finite_diff_angvel_body(quats_xyzw, dt):
+    n = len(quats_xyzw)
+    out = np.zeros((n, 3), dtype=np.float32)
+    qw = np.stack([quat_xyzw_to_wxyz(q) for q in quats_xyzw])
+    for i in range(n):
+        j = min(i + 1, n - 1)
+        q_rel = quat_mul(quat_conjugate(qw[i]), qw[j])
+        if q_rel[0] < 0.0:
+            q_rel = -q_rel
+        out[i] = (2.0 * q_rel[1:]) / max(dt, 1e-8)
+    if n > 1:
+        out[-1] = out[-2]
+    return out.astype(np.float32)
 
 
 def clip_frame(idx, n):
@@ -217,34 +263,81 @@ MIMIC_ROBOT_XML = (
 )
 
 
-def load_pnd_scene(xml_path: str) -> mujoco.MjModel:
-    """Load pnd 12DOF scene with visual OBJ meshes stripped.
-
-    Current MuJoCo rejects several pnd visual meshes (`volume is too small`).
-    Collision geoms and the 12 leg motors are kept so the PD loop matches deploy.
-    """
-    xml_path = Path(xml_path).resolve()
-    robot_xml = xml_path.parent / "adam_lite_12dof.xml"
-    lines = []
-    for line in robot_xml.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("<mesh ") and "file=" in stripped:
-            continue
-        if stripped.startswith("<texture ") and "file=" in stripped:
-            continue
-        if stripped.startswith("<material name=\"pnd_logo\""):
-            continue
-        if "<geom" in stripped and "mesh=" in stripped:
-            continue
-        if 'material="pnd_logo"' in stripped and "<geom" in stripped:
-            continue
-        lines.append(line)
-    robot_text = "\n".join(lines) + "\n"
-    robot_text = robot_text.replace(
-        '<compiler angle="radian" meshdir="assets" texturedir="assets"/>',
-        '<compiler angle="radian" inertiafromgeom="false"/>',
-        1,
+def _position_actuator_xml(name: str, kp: float, kd: float, effort: float) -> str:
+    lo, hi = JOINT_CTRLRANGE[name]
+    return (
+        f'    <position name="{name}" joint="{name}" kp="{kp}" kv="{kd}" '
+        f'ctrllimited="true" ctrlrange="{lo} {hi}" forcerange="{-effort} {effort}"/>'
     )
+
+
+def _motor_actuator_xml(name: str, effort: float) -> str:
+    return (
+        f'    <motor name="{name}" joint="{name}" gear="1" '
+        f'ctrllimited="true" ctrlrange="{-effort} {effort}"/>'
+    )
+
+
+def _paint_collision_geoms(model: mujoco.MjModel) -> None:
+    """Training MJCF hides collision geoms (alpha=0) and has no visual meshes."""
+    for i in range(model.ngeom):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i) or ""
+        if name in ("floor",) or "ground" in name:
+            continue
+        rgba = model.geom_rgba[i]
+        if "Left" in name or "left" in name:
+            rgba[:3] = (0.20, 0.55, 0.90)
+        elif "Right" in name or "right" in name:
+            rgba[:3] = (0.90, 0.40, 0.18)
+        elif "pelvis" in name or "torso" in name or "waist" in name:
+            rgba[:3] = (0.95, 0.85, 0.25)
+        else:
+            rgba[:3] = (0.70, 0.72, 0.75)
+        rgba[3] = 1.0
+
+
+def update_track_camera(cam: mujoco.MjvCamera, root_pos) -> None:
+    """Third-person chase camera looking at the pelvis, not a body-fixed view."""
+    cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+    cam.lookat[:] = (float(root_pos[0]), float(root_pos[1]), float(root_pos[2]) + 0.15)
+    cam.distance = 3.6
+    cam.elevation = -18.0
+    cam.azimuth = 135.0
+
+
+def load_pnd_scene(
+    xml_path: str,
+    sim_dt: float,
+    kps: np.ndarray,
+    kds: np.ndarray,
+    *,
+    actuator: str,
+    integrator: str,
+    apply_armature: bool,
+) -> mujoco.MjModel:
+    """Load the training 12DOF MJCF and inject actuators.
+
+    MimicLite XML has no actuators (mjlab injects them). Native MuJoCo needs
+    them in the MJCF. Visual meshes are omitted so current MuJoCo can load.
+    """
+    del xml_path  # kept for CLI compatibility; training XML is the source of truth
+    robot_text = MIMIC_ROBOT_XML.read_text(encoding="utf-8")
+    actuator_lines = ["  <actuator>"]
+    for i, name in enumerate(LEG_JOINT_NAMES):
+        effort = float(EFFORT_LIMITS[i])
+        if actuator == "position":
+            actuator_lines.append(
+                _position_actuator_xml(name, float(kps[i]), float(kds[i]), effort)
+            )
+        elif actuator == "motor":
+            actuator_lines.append(_motor_actuator_xml(name, effort))
+        else:
+            raise ValueError(f"unknown actuator {actuator}")
+    actuator_lines.append("  </actuator>")
+    actuator_block = "\n".join(actuator_lines)
+    if "</mujoco>" not in robot_text:
+        raise RuntimeError(f"unexpected robot xml {MIMIC_ROBOT_XML}")
+    robot_text = robot_text.replace("</mujoco>", actuator_block + "\n</mujoco>", 1)
     tmpdir = Path(tempfile.mkdtemp(prefix="adam_lite_sim2sim_"))
     patched_robot = tmpdir / "adam_lite_12dof.xml"
     patched_robot.write_text(robot_text, encoding="utf-8")
@@ -263,7 +356,7 @@ def load_pnd_scene(xml_path: str) -> mujoco.MjModel:
                 '    <light pos="0 0 3.5" dir="0 0 -1" directional="true" />',
                 '    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" />',
                 "  </worldbody>",
-                '  <option timestep="0.0025"/>',
+                f'  <option timestep="{sim_dt}" integrator="{integrator}"/>',
                 "</mujoco>",
                 "",
             ]
@@ -271,7 +364,46 @@ def load_pnd_scene(xml_path: str) -> mujoco.MjModel:
         encoding="utf-8",
     )
     print(f"[sim2sim] patched_scene={scene}", flush=True)
-    return mujoco.MjModel.from_xml_path(str(scene))
+    model = mujoco.MjModel.from_xml_path(str(scene))
+    _paint_collision_geoms(model)
+    if apply_armature:
+        for name in LEG_JOINT_NAMES:
+            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            dof = int(model.jnt_dofadr[jid])
+            model.dof_armature[dof] = 0.01
+            model.dof_frictionloss[dof] = 0.01
+    return model
+
+
+MODE_PRESETS = {
+    "train": {
+        "sim_dt": 0.005,
+        "decimation": 4,
+        "effort_scale": 1.0,
+        "pd": "train",
+        "actuator": "position",
+        "integrator": "implicitfast",
+        "apply_armature": True,
+    },
+    "motor": {
+        "sim_dt": 0.0025,
+        "decimation": 8,
+        "effort_scale": 0.85,
+        "pd": "deploy",
+        "actuator": "motor",
+        "integrator": "implicitfast",
+        "apply_armature": True,
+    },
+    "realish": {
+        "sim_dt": 0.0025,
+        "decimation": 8,
+        "effort_scale": 0.85,
+        "pd": "deploy",
+        "actuator": "motor",
+        "integrator": "Euler",
+        "apply_armature": False,
+    },
+}
 
 
 def parse_args():
@@ -279,35 +411,78 @@ def parse_args():
     p.add_argument("--onnx", type=str, default=str(DEFAULT_ONNX))
     p.add_argument("--xml", type=str, default=str(DEFAULT_XML))
     p.add_argument("--motion", type=str, default=str(DEFAULT_MOTION))
-    p.add_argument("--pd", choices=("train", "deploy"), default="train")
+    p.add_argument(
+        "--mode",
+        choices=("train", "motor", "realish"),
+        default="train",
+        help="train=H0 position actuators; motor=H1 motor PD; realish=H2 no extra armature",
+    )
+    p.add_argument("--pd", choices=("train", "deploy"), default=None)
     p.add_argument("--duration", type=float, default=22.0)
-    p.add_argument("--sim-dt", type=float, default=0.0025)
-    p.add_argument("--decimation", type=int, default=8)
+    p.add_argument("--sim-dt", type=float, default=None)
+    p.add_argument("--decimation", type=int, default=None)
+    p.add_argument("--start-frame", type=int, default=1)
+    p.add_argument("--effort-scale", type=float, default=None)
     p.add_argument("--headless", action="store_true", default=True)
     p.add_argument("--record", type=str, default="")
+    p.add_argument("--record-width", type=int, default=960)
+    p.add_argument("--record-height", type=int, default=540)
+    p.add_argument("--record-stride", type=int, default=2)
     p.add_argument("--log-csv", type=str, default="")
     p.add_argument("--out-json", type=str, default="")
     return p.parse_args()
 
 
+def apply_mode_defaults(args):
+    preset = MODE_PRESETS[args.mode]
+    if args.sim_dt is None:
+        args.sim_dt = float(preset["sim_dt"])
+    if args.decimation is None:
+        args.decimation = int(preset["decimation"])
+    if args.effort_scale is None:
+        args.effort_scale = float(preset["effort_scale"])
+    if args.pd is None:
+        args.pd = str(preset["pd"])
+    args.actuator = str(preset["actuator"])
+    args.integrator = str(preset["integrator"])
+    args.apply_armature = bool(preset["apply_armature"])
+    return args
+
+
 def main():
-    args = parse_args()
+    args = apply_mode_defaults(parse_args())
     load_motion = _load_motion_fn()
     control_dt = args.sim_dt * args.decimation
     motion = load_motion(args.motion, target_dt=control_dt)
+    motion["root_ang_vel"] = finite_diff_angvel_body(motion["root_quat"], control_dt)
     num_frames = int(motion["num_frames"])
     kps = TRAIN_KPS if args.pd == "train" else DEPLOY_KPS
     kds = TRAIN_KDS if args.pd == "train" else DEPLOY_KDS
-    torque_limits = EFFORT_LIMITS * 0.85
+    torque_limits = EFFORT_LIMITS * float(args.effort_scale)
 
     sess = ort.InferenceSession(args.onnx, providers=["CPUExecutionProvider"])
     in_names = [i.name for i in sess.get_inputs()]
     if set(in_names) != {"command", "policy"}:
         raise SystemExit(f"unexpected ONNX inputs {in_names}")
 
-    m = load_pnd_scene(args.xml)
+    m = load_pnd_scene(
+        args.xml,
+        args.sim_dt,
+        kps,
+        kds,
+        actuator=args.actuator,
+        integrator=args.integrator,
+        apply_armature=args.apply_armature,
+    )
     d = mujoco.MjData(m)
     m.opt.timestep = args.sim_dt
+    if args.integrator.lower() == "implicitfast":
+        m.opt.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
+    else:
+        m.opt.integrator = mujoco.mjtIntegrator.mjINT_EULER
+    if args.actuator == "position" and abs(args.effort_scale - 1.0) > 1e-6:
+        for i in range(min(NUM_ACTIONS, m.nu)):
+            m.actuator_forcerange[i] *= args.effort_scale
     toe_ids = [
         mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
         for name in ("toeLeft", "toeRight")
@@ -326,6 +501,7 @@ def main():
         d.qpos[7 : 7 + NUM_ACTIONS] = motion["dof_pos"][frame_idx]
         d.qvel[:] = 0.0
         d.qvel[:3] = motion["root_lin_vel"][frame_idx]
+        d.qvel[3:6] = motion["root_ang_vel"][frame_idx]
         d.qvel[6 : 6 + NUM_ACTIONS] = motion["dof_vel"][frame_idx]
         mujoco.mj_forward(m, d)
         qj = d.qpos[7 : 7 + NUM_ACTIONS].copy()
@@ -339,15 +515,16 @@ def main():
         prev_actions[:] = 0.0
         return frame_idx
 
-    def policy_step(frame_idx: int):
+    def policy_step(frame_idx: int, push_hist: bool = True):
         qj = d.qpos[7 : 7 + NUM_ACTIONS].astype(np.float32)
         dqj = d.qvel[6 : 6 + NUM_ACTIONS].astype(np.float32)
         ang = d.qvel[3:6].astype(np.float32)
         grav = gravity_b(d.qpos[3:7])
-        hist_ang.push(ang)
-        hist_grav.push(grav)
-        hist_q.push(qj)
-        hist_dq.push(dqj)
+        if push_hist:
+            hist_ang.push(ang)
+            hist_grav.push(grav)
+            hist_q.push(qj)
+            hist_dq.push(dqj)
         command = build_command(motion, frame_idx, d.qpos[:3], d.qpos[3:7])
         policy = build_policy_obs(hist_ang, hist_grav, hist_q, hist_dq, prev_actions)
         if command.shape != (168,) or policy.shape != (246,):
@@ -360,10 +537,11 @@ def main():
         prev_actions[0] = action
         ref_dof = motion["dof_pos"][clip_frame(frame_idx, num_frames)]
         target = ref_dof + action * ACTION_SCALE
-        return action, target
+        return action, target, command, policy
 
-    frame_idx = reset_to_frame(0)
-    action, target = policy_step(frame_idx)
+    frame_idx = reset_to_frame(args.start_frame)
+    action, target, command0, policy0 = policy_step(frame_idx, push_hist=False)
+    prev_target = motion["dof_pos"][clip_frame(frame_idx, num_frames)].copy()
     rows = []
     peak_total = 0.0
     peak_per_foot = 0.0
@@ -373,43 +551,59 @@ def main():
     both_air = 0
     longest_air = 0
     n_ctrl = 0
+    fall_t = None
     renderer = None
     writer = None
+    rec_stride = 1
     record_path = (args.record or "").strip()
     if record_path:
         import imageio.v2 as imageio
 
         os.environ.setdefault("MUJOCO_GL", "egl")
         os.makedirs(os.path.dirname(record_path) or ".", exist_ok=True)
-        m.vis.global_.offwidth = max(int(m.vis.global_.offwidth), 1280)
-        m.vis.global_.offheight = max(int(m.vis.global_.offheight), 720)
-        renderer = mujoco.Renderer(m, height=720, width=1280)
+        rec_w = max(320, int(args.record_width))
+        rec_h = max(240, int(args.record_height))
+        rec_stride = max(1, int(args.record_stride))
+        m.vis.global_.offwidth = max(int(m.vis.global_.offwidth), rec_w)
+        m.vis.global_.offheight = max(int(m.vis.global_.offheight), rec_h)
+        renderer = mujoco.Renderer(m, height=rec_h, width=rec_w)
         cam = mujoco.MjvCamera()
         mujoco.mjv_defaultFreeCamera(m, cam)
+        update_track_camera(cam, d.qpos[:3])
+        record_fps = max(1, int(round(1.0 / (control_dt * rec_stride))))
         writer = imageio.get_writer(
             record_path,
-            fps=int(round(1.0 / control_dt)),
+            fps=record_fps,
             codec="libx264",
             quality=8,
             pixelformat="yuv420p",
             macro_block_size=None,
         )
+        print(
+            f"[sim2sim] record {rec_w}x{rec_h} stride={rec_stride} fps={record_fps}",
+            flush=True,
+        )
 
     n_steps = int(args.duration / args.sim_dt)
     print(
-        f"[sim2sim] onnx={args.onnx} pd={args.pd} frames={num_frames} "
-        f"dt={args.sim_dt} decimation={args.decimation}",
+        f"[sim2sim] mode={args.mode} actuator={args.actuator} onnx={args.onnx} "
+        f"pd={args.pd} frames={num_frames} dt={args.sim_dt} "
+        f"decimation={args.decimation} effort={args.effort_scale} "
+        f"armature={args.apply_armature} start={args.start_frame} nu={m.nu} "
+        f"cmd0={command0[:6].tolist()} pol0={policy0[:6].tolist()}",
         flush=True,
     )
     for step in range(n_steps):
-        tau = pd_control(
-            target,
-            d.qpos[7 : 7 + NUM_ACTIONS],
-            kps,
-            d.qvel[6 : 6 + NUM_ACTIONS],
-            kds,
-        )
-        d.ctrl[:NUM_ACTIONS] = np.clip(tau, -torque_limits, torque_limits)
+        # Training delay=1 physics substep: first tick of a control period
+        # still applies the previous target (or zero residual at t=0).
+        use_target = prev_target if (step % args.decimation == 0) else target
+        qj = d.qpos[7 : 7 + NUM_ACTIONS]
+        dqj = d.qvel[6 : 6 + NUM_ACTIONS]
+        if args.actuator == "position":
+            d.ctrl[:NUM_ACTIONS] = use_target
+        else:
+            tau = pd_control(use_target, qj, kps, dqj, kds)
+            d.ctrl[:NUM_ACTIONS] = np.clip(tau, -torque_limits, torque_limits)
         mujoco.mj_step(m, d)
         if step % args.decimation != args.decimation - 1:
             continue
@@ -424,6 +618,10 @@ def main():
         air = bool((feet < 1.0).all())
         both_air = both_air + 1 if air else 0
         longest_air = max(longest_air, both_air)
+        grav = gravity_b(d.qpos[3:7])
+        fallen = z < 0.30 or float(grav[2]) > -0.5
+        if fallen and fall_t is None:
+            fall_t = (step + 1) * args.sim_dt
         ref_z = float(motion["root_pos"][clip_frame(frame_idx, num_frames)][2])
         rows.append(
             {
@@ -438,19 +636,17 @@ def main():
                 "grf_r": float(feet[1]),
             }
         )
-        if writer is not None:
-            cam.lookat[:] = d.qpos[:3]
-            cam.distance = 3.2
-            cam.elevation = -20.0
-            cam.azimuth = 140.0
+        if writer is not None and (n_ctrl % rec_stride == 0):
+            update_track_camera(cam, d.qpos[:3])
             renderer.update_scene(d, camera=cam)
             writer.append_data(np.asarray(renderer.render()))
-        action, target = policy_step(frame_idx)
+        prev_target = target
+        action, target, _, _ = policy_step(frame_idx, push_hist=True)
         n_ctrl += 1
         if n_ctrl % 50 == 0:
             print(
                 f"[sim2sim] t={rows[-1]['t']:5.1f}s z={z:.3f}(ref {ref_z:.3f}) "
-                f"vz={vz:+.2f} grf={total:.0f}N",
+                f"vz={vz:+.2f} grf={total:.0f}N fall={fall_t}",
                 flush=True,
             )
         frame_idx += 1
@@ -464,8 +660,17 @@ def main():
 
     stats = {
         "onnx": str(args.onnx),
+        "mode": args.mode,
+        "actuator": args.actuator,
         "pd": args.pd,
-        "mean_alive_s": float(n_ctrl * control_dt),
+        "sim_dt": args.sim_dt,
+        "decimation": args.decimation,
+        "effort_scale": args.effort_scale,
+        "apply_armature": args.apply_armature,
+        "integrator": args.integrator,
+        "start_frame": args.start_frame,
+        "mean_alive_s": float((fall_t if fall_t is not None else n_ctrl * control_dt)),
+        "time_to_fall_s": fall_t,
         "peak_jump_m": float(peak_z - start_z),
         "takeoff_vz": float(max_vz),
         "flight_s": float(longest_air * control_dt),
@@ -473,6 +678,7 @@ def main():
         "peak_per_foot_n": peak_per_foot,
         "final_z": float(d.qpos[2]),
         "n_ctrl": n_ctrl,
+        "fallen": fall_t is not None,
     }
     print("[sim2sim] stats", json.dumps(stats, indent=2), flush=True)
     if args.out_json:

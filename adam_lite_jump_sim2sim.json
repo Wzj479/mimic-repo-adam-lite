@@ -1,0 +1,17 @@
+{
+  "onnx": "/root/autodl-tmp/mimic-repro-adam-lite/active-adaptation/projects/mimic-lite/scripts/exports/AdamLiteJumpTrack/policy-wlvs4cnd-unknown.onnx",
+  "pd": "train",
+  "sim_dt": 0.005,
+  "decimation": 4,
+  "start_frame": 1,
+  "mean_alive_s": 21.34,
+  "time_to_fall_s": null,
+  "peak_jump_m": 0.22162485480923388,
+  "takeoff_vz": 2.468996335453071,
+  "flight_s": 0.44,
+  "peak_total_grf_n": 5347.8759765625,
+  "peak_per_foot_n": 4996.01708984375,
+  "final_z": 0.8746509378077324,
+  "n_ctrl": 1067,
+  "fallen": false
+}
